@@ -19,7 +19,7 @@ html,body{margin:0;height:100%;background:#0d2238;color:var(--ink);font-family:"
 #lenses button:hover{background:rgba(255,255,255,.07)}
 #lenses button.on{background:linear-gradient(90deg,rgba(231,194,107,.28),rgba(231,194,107,.06));color:#fff}
 #lenses i{width:12px;height:12px;border-radius:3px;display:inline-block;flex:none}
-#legend{left:18px;bottom:16px;padding:10px 14px;max-width:560px;font:12px "Noto Sans",system-ui,sans-serif}
+#legend{left:18px;bottom:16px;padding:9px 13px;max-width:400px;font:11.5px "Noto Sans",system-ui,sans-serif}
 #legend .lens{font-family:"Cinzel",Georgia,serif;color:var(--gold);letter-spacing:.12em;font-size:13px}
 #legend .desc{opacity:.85;margin:3px 0 6px}
 #legend .ramp{height:9px;border-radius:5px;margin:4px 0 2px}

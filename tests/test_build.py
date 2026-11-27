@@ -95,3 +95,11 @@ def test_cross_check_populations_keeps_smaller_disputed_figure():
     out = cross_check_populations(cities, "TL", lookup=lambda ids, tag: {"1": 60_000, "2": 1_100_000})
     assert [c["pop"] for c in out] == [60_000, 1_000_000, 900_000]
     assert out[0]["popSource"] == "Wikidata" and "popSource" not in out[1]
+
+
+def test_capital_inside_a_bigger_city_marks_that_city():
+    from civmap.build import merge_urban_duplicates
+    cities = [{"name": "Delhi", "lat": 28.65, "lon": 77.23, "pop": 11_000_000, "fcode": "PPLA"},
+              {"name": "New Delhi", "lat": 28.61, "lon": 77.21, "pop": 317_000, "fcode": "PPLC"}]
+    out = merge_urban_duplicates(cities, lambda c: (c["lon"] * 98, c["lat"] * 111), size=15)
+    assert len(out) == 1 and out[0]["name"] == "Delhi" and out[0]["capitalOf"] == "New Delhi"

@@ -98,6 +98,8 @@ def merge_urban_duplicates(cities: list[dict], xy, size: float) -> list[dict]:
         big = out[hit]
         if SEAT_RANK.get(c.get("fcode"), 0) > SEAT_RANK.get(big.get("fcode"), 0) and c["pop"] >= 0.25 * big["pop"]:
             out[hit] = dict(c, pop=big["pop"], lat=big["lat"], lon=big["lon"])
+        elif c.get("fcode") == "PPLC":  # e.g. New Delhi inside Delhi
+            big["capitalOf"] = c["name"]
     return sorted(out, key=lambda c: -c["pop"])
 
 
@@ -440,8 +442,11 @@ def build(inp: Inputs, target_hexes: int = 5000, log: Callable = lambda *_: None
         cnt = int(m.sum())
         if cnt == 0:
             continue
-        # label at the hex deepest inside the state (most same-state neighbours, near centroid)
-        mx, my = x[m].mean(), y[m].mean()
+        # label on the state's own hex closest to its median point, so states with
+        # far-flung islands (Tokyo, Andaman and Nicobar) keep their label on land
+        sx_, sy_ = x[m], y[m]
+        k = int(np.argmin((sx_ - np.median(sx_)) ** 2 + (sy_ - np.median(sy_)) ** 2))
+        mx, my = sx_[k], sy_[k]
         states_out.append({"id": s, "name": name, "color": colors[s], "hexes": cnt,
                            "lx": round(float(mx), 1), "ly": round(float(my), 1)})
     foreign = []

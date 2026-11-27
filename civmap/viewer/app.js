@@ -101,6 +101,7 @@
     document.getElementById("cname").textContent = D.meta.name.toUpperCase();
     document.title = D.meta.name + " · civmap";
     stats(); fit(); dirty = true; sel = null; hideCard(); legend();
+    const tb = document.getElementById("title"); document.getElementById("stats").style.top = (tb.offsetTop + tb.offsetHeight + 8) + "px";
   }
 
   function fit() {
@@ -110,7 +111,7 @@
     xs.sort((p, q) => p - q); ys.sort((p, q) => p - q);
     const pc = (arr, f) => arr[Math.min(arr.length - 1, Math.max(0, Math.round(f * (arr.length - 1))))];
     const a = pc(xs, 0.01), c = pc(xs, 0.99), b = pc(ys, 0.01), d = pc(ys, 0.99);
-    const padL = W > 900 ? 120 : 20, padR = W > 900 ? 210 : 20, padT = 60, padB = 60;
+    const padL = W > 900 ? 200 : 20, padR = W > 900 ? 210 : 20, padT = 50, padB = W > 900 ? 70 : 40;
     cam.s = Math.min((W - padL - padR) / (c - a), (H - padT - padB) / (d - b));
     cam.x = (a + c) / 2 - (padL - padR) / 2 / cam.s; cam.y = (b + d) / 2;
   }
@@ -418,16 +419,25 @@
       ctx.font = `700 ${fs * 0.82}px "Noto Sans", system-ui, sans-serif`;
       const pw = Math.max(fs * 1.9, ctx.measureText(c.popLabel).width + fs * 0.8);
       const bh = fs * 1.55, bw = pw + nw + (c.capital ? fs * 1.2 : 0);
-      const bx = X - bw / 2, by = Y - bh - Math.max(4, r * 0.35);
       const showEp = c.epithet && r > 7;
-      const box = [bx, by - (showEp ? fs : 0), bx + bw + Math.min(3, c.districts.length) * fs * 1.25, by + bh];
-      if (placed.some((b) => !(box[2] < b[0] || box[0] > b[2] || box[3] < b[1] || box[1] > b[3]))) continue;
+      const extra = Math.min(3, c.districts.length) * fs * 1.25;
+      const gap = Math.max(4, r * 0.35);
+      // try above the city first, then below, then nudged sideways
+      const spots = [[X - bw / 2, Y - bh - gap], [X - bw / 2, Y + gap + 2], [X - bw - extra / 2 + 8, Y - bh - gap], [X - 8, Y - bh - gap],
+                     [X - bw - extra / 2 + 8, Y + gap + 2], [X - 8, Y + gap + 2]];
+      let bx = 0, by = 0, box = null;
+      for (const [px, py] of spots) {
+        const b = [px, py - (showEp ? fs : 0), px + bw + extra, py + bh];
+        if (!placed.some((o) => !(b[2] < o[0] || b[0] > o[2] || b[3] < o[1] || b[1] > o[3]))) { bx = px; by = py; box = b; break; }
+      }
+      if (!box) continue;
       placed.push(box);
       // city hex marker
       ctx.beginPath(); hexPath(X, Y, Math.max(4, r * 0.62)); ctx.fillStyle = "rgba(60,48,36,0.92)"; ctx.fill(); ctx.strokeStyle = "#f3e3b5"; ctx.lineWidth = 1.4; ctx.stroke();
       ctx.beginPath(); hexPath(X, Y, Math.max(2, r * 0.32)); ctx.fillStyle = "#e9d7a8"; ctx.fill();
       // stem
-      ctx.beginPath(); ctx.moveTo(X, by + bh); ctx.lineTo(X, Y - Math.max(3, r * 0.4)); ctx.strokeStyle = "rgba(20,14,8,0.8)"; ctx.lineWidth = 1.5; ctx.stroke();
+      const below = by > Y;
+      ctx.beginPath(); ctx.moveTo(Math.max(bx + bh / 2, Math.min(bx + bw - bh / 2, X)), below ? by : by + bh); ctx.lineTo(X, Y + (below ? 1 : -1) * Math.max(3, r * 0.4)); ctx.strokeStyle = "rgba(20,14,8,0.8)"; ctx.lineWidth = 1.5; ctx.stroke();
       const col = stateColor[c.state] || [120, 100, 80];
       ctx.save(); ctx.shadowColor = "rgba(0,0,0,0.55)"; ctx.shadowBlur = 6; ctx.shadowOffsetY = 2;
       round(bx, by, bw, bh, bh / 2); ctx.fillStyle = rgb(mix(col, [24, 20, 16], 0.45)); ctx.fill(); ctx.restore();
