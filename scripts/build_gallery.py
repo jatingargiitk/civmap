@@ -16,6 +16,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from PIL import Image  # noqa: E402
+
 from civmap.build import build, gather  # noqa: E402
 from civmap.render import gallery_html, screenshot, write_html  # noqa: E402
 
@@ -41,7 +43,9 @@ def main() -> None:
         if a.images and (not a.only or iso in a.only):
             html = Path("/tmp/civmap-gallery") / f"{iso}.html"
             write_html(data, html)
-            screenshot(html, docs / "img" / f"{iso.lower()}.png", width=1600, height=1000, scale=1.5)
+            png = screenshot(html, Path("/tmp/civmap-gallery") / f"{iso}.png", width=1600, height=1000, scale=1.5)
+            Image.open(png).convert("RGB").save(docs / "img" / f"{iso.lower()}.jpg", quality=88, optimize=True,
+                                                progressive=True)
             print("rendered", iso)
     (docs / "countries.json").write_text(json.dumps(index, indent=1))
     (docs / "index.html").write_text(gallery_html(index))
