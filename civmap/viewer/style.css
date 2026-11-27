@@ -1,0 +1,41 @@
+:root{--ink:#f3ead7;--gold:#e7c26b;--panel:rgba(14,22,34,.86);--line:rgba(231,194,107,.35)}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:#0d2238;color:var(--ink);font-family:"Cinzel","Noto Serif","Georgia",serif;overflow:hidden}
+#map{position:fixed;inset:0;width:100vw;height:100vh;cursor:grab;display:block}
+#map.drag{cursor:grabbing}
+.panel{position:fixed;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.45);backdrop-filter:blur(4px)}
+#title{left:18px;top:16px;padding:14px 18px 12px 16px;display:flex;gap:14px;align-items:center;max-width:520px}
+#emblem{width:54px;height:54px;flex:none}
+#title h1{margin:0;font-size:30px;letter-spacing:.14em;font-weight:700;color:var(--gold);line-height:1}
+#title .sub{font-family:"Noto Serif",Georgia,serif;font-style:italic;font-size:13px;opacity:.85;margin-top:5px}
+#picker{margin-top:8px;font:13px "Noto Sans",system-ui,sans-serif}
+#picker select{background:#13263b;color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:3px 6px;font:inherit}
+#stats{left:18px;top:118px;padding:8px 12px;display:flex;gap:16px;font:12px "Noto Sans",system-ui,sans-serif}
+#stats b{display:block;font:600 16px "Noto Sans",system-ui,sans-serif;color:#fff}
+#stats span{opacity:.75;text-transform:uppercase;letter-spacing:.08em;font-size:10px}
+#lenses{right:18px;top:16px;padding:10px;display:flex;flex-direction:column;gap:4px;width:178px}
+#lenses .h{font-size:11px;letter-spacing:.2em;color:var(--gold);padding:2px 6px 6px}
+#lenses button{all:unset;cursor:pointer;padding:6px 9px;border-radius:6px;font:13px "Noto Sans",system-ui,sans-serif;display:flex;gap:8px;align-items:center}
+#lenses button:hover{background:rgba(255,255,255,.07)}
+#lenses button.on{background:linear-gradient(90deg,rgba(231,194,107,.28),rgba(231,194,107,.06));color:#fff}
+#lenses i{width:12px;height:12px;border-radius:3px;display:inline-block;flex:none}
+#legend{left:18px;bottom:16px;padding:10px 14px;max-width:560px;font:12px "Noto Sans",system-ui,sans-serif}
+#legend .lens{font-family:"Cinzel",Georgia,serif;color:var(--gold);letter-spacing:.12em;font-size:13px}
+#legend .desc{opacity:.85;margin:3px 0 6px}
+#legend .ramp{height:9px;border-radius:5px;margin:4px 0 2px}
+#legend .ends{display:flex;justify-content:space-between;opacity:.7;font-size:11px}
+#legend .src{opacity:.6;font-size:10.5px;margin-top:6px}
+#card{right:18px;bottom:16px;width:330px;padding:14px 16px;font:13px "Noto Sans",system-ui,sans-serif;display:none;max-height:60vh;overflow:auto}
+#card h2{margin:0 0 2px;font:700 20px "Cinzel",Georgia,serif;color:var(--gold);letter-spacing:.06em}
+#card .ep{font-style:italic;opacity:.8;font-family:"Noto Serif",Georgia,serif}
+#card .d{display:flex;gap:10px;margin-top:10px;align-items:flex-start}
+#card .d canvas{flex:none}
+#card .d small{display:block;opacity:.75}
+#card .x{position:absolute;right:10px;top:8px;cursor:pointer;opacity:.6}
+#tip{position:fixed;pointer-events:none;padding:7px 10px;font:12px "Noto Sans",system-ui,sans-serif;display:none;max-width:280px;line-height:1.45}
+#tip b{color:var(--gold)}
+#credit{position:fixed;right:18px;bottom:6px;font:10px "Noto Sans",system-ui,sans-serif;opacity:.55}
+#credit a{color:inherit}
+body.hero #lenses button:not(.on){opacity:.75}
+body.hero #credit{display:none}
+@media (max-width:760px){#lenses{top:auto;bottom:16px;width:150px}#stats{display:none}#legend{display:none}#title h1{font-size:22px}}
