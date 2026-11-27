@@ -16,7 +16,7 @@
     [58, 121, 163],  // coast
     [72, 139, 186],  // lake
     [118, 158, 72],  // grassland
-    [178, 167, 92],  // plains
+    [174, 166, 92],  // plains
     [222, 196, 132], // desert
     [146, 150, 128], // tundra
     [232, 238, 242], // snow
@@ -104,9 +104,13 @@
   }
 
   function fit() {
-    const h = D.hex; let a = 1e9, b = 1e9, c = -1e9, d = -1e9;
-    for (let i = 0; i < N; i++) if (h.o[i] === 0) { a = Math.min(a, cx[i]); b = Math.min(b, cy[i]); c = Math.max(c, cx[i]); d = Math.max(d, cy[i]); }
-    const padL = W > 900 ? 120 : 20, padR = W > 900 ? 210 : 20, padT = 40, padB = 40;
+    // fit the bulk of the country (1st-99th percentile) so a few remote islets don't shrink the view
+    const h = D.hex, xs = [], ys = [];
+    for (let i = 0; i < N; i++) if (h.o[i] === 0) { xs.push(cx[i]); ys.push(cy[i]); }
+    xs.sort((p, q) => p - q); ys.sort((p, q) => p - q);
+    const pc = (arr, f) => arr[Math.min(arr.length - 1, Math.max(0, Math.round(f * (arr.length - 1))))];
+    const a = pc(xs, 0.01), c = pc(xs, 0.99), b = pc(ys, 0.01), d = pc(ys, 0.99);
+    const padL = W > 900 ? 120 : 20, padR = W > 900 ? 210 : 20, padT = 60, padB = 60;
     cam.s = Math.min((W - padL - padR) / (c - a), (H - padT - padB) / (d - b));
     cam.x = (a + c) / 2 - (padL - padR) / 2 / cam.s; cam.y = (b + d) / 2;
   }
@@ -124,11 +128,11 @@
   function terrainColor(i) {
     const h = D.hex; const t = h.t[i];
     let c = TER[t];
-    if (t === 0) c = mix([44, 98, 146], [14, 40, 76], Math.min(1, Math.max(0, -h.e[i] / 4500)));
+    if (t === 0) { const d = Math.max(0, -h.e[i]); c = d < 200 ? mix([62, 128, 170], [42, 96, 142], d / 200) : mix([40, 92, 138], [14, 40, 76], Math.min(1, Math.pow((d - 200) / 4500, 0.6))); }
     if (t === 1) c = mix([84, 150, 182], [50, 112, 160], Math.min(1, Math.max(0, -h.e[i] / 120)));
     if (h.f[i] === 1) c = mix(c, [64, 112, 56], 0.55);
     if (h.f[i] === 2) c = mix(c, [40, 104, 52], 0.7);
-    if (h.f[i] === 3) c = mix(c, [150, 168, 80], 0.45);
+    if (h.f[i] === 3) c = mix(c, [112, 158, 66], 0.62);
     if (h.h[i] && t !== 8) c = mix(c, [150, 128, 90], 0.18);
     if (t === 8 && h.e[i] > 4600) c = mix(c, [225, 230, 236], 0.55);
     return c;
@@ -383,7 +387,7 @@
       const g = ctx.createRadialGradient(X, Y, 0, X, Y, rad * 1.7); g.addColorStop(0, w.natural ? "rgba(120,230,140,0.55)" : "rgba(255,215,110,0.6)"); g.addColorStop(1, "rgba(255,215,110,0)");
       ctx.fillStyle = g; ctx.fill();
       badge(X, Y, rad, w.natural ? "#3f9a58" : "#c9962a", "wonder");
-      if (r > 14) { ctx.font = `italic 600 ${Math.min(14, r * 0.55)}px "Noto Serif", Georgia, serif`; ctx.textAlign = "center"; ctx.textBaseline = "top"; ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.6)"; ctx.strokeText(w.n, X, Y + rad + 3); ctx.fillStyle = "#ffe7a8"; ctx.fillText(w.n, X, Y + rad + 3); }
+      if (r > 14) { const nm = w.n.length > 42 ? w.n.slice(0, 40) + "…" : w.n; ctx.font = `italic 600 ${Math.min(14, r * 0.55)}px "Noto Serif", Georgia, serif`; ctx.textAlign = "center"; ctx.textBaseline = "top"; ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.6)"; ctx.strokeText(nm, X, Y + rad + 3); ctx.fillStyle = "#ffe7a8"; ctx.fillText(nm, X, Y + rad + 3); }
     }
   }
 
@@ -415,7 +419,8 @@
       const pw = Math.max(fs * 1.9, ctx.measureText(c.popLabel).width + fs * 0.8);
       const bh = fs * 1.55, bw = pw + nw + (c.capital ? fs * 1.2 : 0);
       const bx = X - bw / 2, by = Y - bh - Math.max(4, r * 0.35);
-      const box = [bx, by, bx + bw, by + bh];
+      const showEp = c.epithet && r > 7;
+      const box = [bx, by - (showEp ? fs : 0), bx + bw + Math.min(3, c.districts.length) * fs * 1.25, by + bh];
       if (placed.some((b) => !(box[2] < b[0] || box[0] > b[2] || box[3] < b[1] || box[1] > b[3]))) continue;
       placed.push(box);
       // city hex marker
@@ -437,9 +442,8 @@
       // district badges
       const ds = c.districts.slice(0, 3); const dr = fs * 0.58;
       ds.forEach((d, k) => badge(bx + bw + dr + 3 + k * (dr * 2 + 3), by + bh / 2, dr, DISTRICT[d.id].c, d.id));
-      if (ds.length) placed[placed.length - 1][2] += ds.length * (dr * 2 + 3) + 4;
       // epithet
-      if (c.epithet && r > 7) { ctx.font = `italic ${fs * 0.78}px "Noto Serif", Georgia, serif`; ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.6)"; ctx.strokeText(c.epithet, X, by - 2); ctx.fillStyle = "#f3e3b5"; ctx.fillText(c.epithet, X, by - 2); }
+      if (showEp) { ctx.font = `italic ${fs * 0.78}px "Noto Serif", Georgia, serif`; ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.6)"; ctx.strokeText(c.epithet, X, by - 2); ctx.fillStyle = "#f3e3b5"; ctx.fillText(c.epithet, X, by - 2); }
       c._box = [bx, by, bw + ds.length * (dr * 2 + 3), bh];
     }
   }
