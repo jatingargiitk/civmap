@@ -57,8 +57,8 @@ def assign_districts(cities, layers, radius_km, total_pop, coast=lambda i: False
         found = []
         u = _near(c, unis, radius_km)
         lq = location_quotient(len(u), len(unis), share)
-        if len(u) >= 3 and lq >= 1.2:
-            found.append(("campus", 1.6 * lq, f"{len(u)} universities within {radius_km:.0f} km "
+        if len(u) >= 3 and lq >= 1.5:
+            found.append(("campus", 1.2 * lq, f"{len(u)} universities within {radius_km:.0f} km "
                                         f"({lq:.1f}x the national rate per resident)"))
         pw = _near(c, power, radius_km)
         mw = sum(p["mw"] for p in pw)

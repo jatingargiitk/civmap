@@ -74,3 +74,24 @@ def test_find_country():
     assert find_country(feats, "united kingdom")["properties"]["ADM0_A3"] == "GBR"
     assert find_country(feats, "FR")["properties"]["NAME"] == "France"
     assert find_country(feats, "Fra")["properties"]["NAME"] == "France"
+
+
+def test_merge_urban_duplicates_prefers_the_seat_name():
+    from civmap.build import merge_urban_duplicates
+    cities = [
+        {"name": "Suburb", "lat": 0.0, "lon": 0.0, "pop": 1_700_000, "fcode": "PPL"},
+        {"name": "Seat", "lat": 0.0, "lon": 0.05, "pop": 1_000_000, "fcode": "PPLA2"},
+        {"name": "Far", "lat": 5.0, "lon": 5.0, "pop": 500_000, "fcode": "PPL"},
+    ]
+    out = merge_urban_duplicates(cities, lambda c: (c["lon"] * 111, c["lat"] * 111), size=15)
+    assert [(c["name"], c["pop"]) for c in out] == [("Seat", 1_700_000), ("Far", 500_000)]
+
+
+def test_cross_check_populations_keeps_smaller_disputed_figure():
+    from civmap.build import cross_check_populations
+    cities = [{"gid": "1", "name": "District-sized", "pop": 1_700_000},
+              {"gid": "2", "name": "Fine", "pop": 1_000_000},
+              {"gid": "3", "name": "Unknown", "pop": 900_000}]
+    out = cross_check_populations(cities, "TL", lookup=lambda ids, tag: {"1": 60_000, "2": 1_100_000})
+    assert [c["pop"] for c in out] == [60_000, 1_000_000, 900_000]
+    assert out[0]["popSource"] == "Wikidata" and "popSource" not in out[1]

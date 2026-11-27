@@ -77,6 +77,45 @@ def main_landmass(geom, max_gap_km: float = 1100.0):
     return MultiPolygon(kept) if len(kept) > 1 else kept[0]
 
 
+SEAT_RANK = {"PPLC": 4, "PPLA": 3, "PPLA2": 2, "PPLA3": 1}
+
+
+def merge_urban_duplicates(cities: list[dict], xy, size: float) -> list[dict]:
+    """GeoNames sometimes lists a big suburb above the city it belongs to
+    (e.g. Rasapudipalem above Visakhapatnam). When two entries sit within one
+    hex radius, keep one entry with the administrative seat's name and the
+    larger population."""
+    cities = sorted(cities, key=lambda c: -c["pop"])
+    out: list[dict] = []
+    pos: list[tuple[float, float]] = []
+    for c in cities:
+        x, y = (float(v) for v in xy(c))
+        hit = next((k for k, (a, b) in enumerate(pos) if math.hypot(a - x, b - y) < size), None)
+        if hit is None:
+            out.append(dict(c))
+            pos.append((x, y))
+            continue
+        big = out[hit]
+        if SEAT_RANK.get(c.get("fcode"), 0) > SEAT_RANK.get(big.get("fcode"), 0) and c["pop"] >= 0.25 * big["pop"]:
+            out[hit] = dict(c, pop=big["pop"], lat=big["lat"], lon=big["lon"])
+    return sorted(out, key=lambda c: -c["pop"])
+
+
+def group_admin1(units: list[dict], max_units: int = 60) -> list:
+    """Admin-1 units as (name, geometry). Countries with very many small units
+    (UK counties, Italian provinces) are merged into their Natural Earth region."""
+    if len(units) > max_units:
+        regions = [u["properties"].get("region") for u in units]
+        names = {r for r in regions if r}
+        if all(regions) and 4 <= len(names) <= 40:
+            groups: dict[str, list] = {}
+            for u, r in zip(units, regions):
+                groups.setdefault(r, []).append(shapely.make_valid(shape(u["geometry"])))
+            return [(r, shapely.union_all(gs)) for r, gs in sorted(groups.items())]
+    return [(u["properties"].get("name") or u["properties"].get("name_en") or "?",
+             shapely.make_valid(shape(u["geometry"]))) for u in units]
+
+
 def _color_states(n, adjacency):
     order = sorted(range(n), key=lambda i: -len(adjacency[i]))
     colors = [-1] * n
@@ -154,10 +193,24 @@ def build(inp: Inputs, target_hexes: int = 5000, log: Callable = lambda *_: None
     owner[own] = 0
 
     frame_box = box(*frame)
+    # lon/lat box around the frame: clip inputs to it before projecting, so that
+    # huge far-away polygons (oceans, continents) never wrap around the sphere
+    ex = np.linspace(frame[0], frame[2], 40)
+    ey = np.linspace(frame[1], frame[3], 40)
+    bx = np.concatenate([ex, ex, np.full(40, frame[0]), np.full(40, frame[2])])
+    by = np.concatenate([np.full(40, frame[1]), np.full(40, frame[3]), ey, ey])
+    blon, blat = proj.inverse(bx, by)
+    ll_box = box(max(-180, blon.min() - 1), max(-89.9, blat.min() - 1), min(180, blon.max() + 1), min(89.9, blat.max() + 1))
+
+    def P(g):
+        g = shapely.make_valid(g).intersection(ll_box)
+        if g.is_empty:
+            return g
+        return shapely.make_valid(proj.geom(g))
     neighbour_id = np.full(n, -1, dtype=np.int32)
     neighbour_names = []
     for name, g in inp.neighbours:
-        gp = shapely.make_valid(proj.geom(g)).intersection(frame_box)
+        gp = P(g).intersection(frame_box)
         if gp.is_empty:
             continue
         shapely.prepare(gp)
@@ -188,8 +241,8 @@ def build(inp: Inputs, target_hexes: int = 5000, log: Callable = lambda *_: None
     # water
     lake = np.zeros(n, bool)
     for g in inp.lakes:
-        gp = proj.geom(g)
-        if gp.intersects(frame_box):
+        gp = P(g)
+        if not gp.is_empty:
             lake |= shapely.contains_xy(gp, x, y)
     ter = ter.astype(np.int8)
     ter[~is_land] = T.OCEAN
@@ -208,7 +261,7 @@ def build(inp: Inputs, target_hexes: int = 5000, log: Callable = lambda *_: None
         j = nbr[:, k]
         ok = j >= 0
         land_nb[ok] |= is_land[j[ok]] & ~lake[j[ok]]
-    coast = ~is_land & (land_nb | (elev > -80))
+    coast = ~is_land & land_nb
     ter[coast] = T.COAST
     ter[lake & is_land] = T.LAKE
 
@@ -216,7 +269,7 @@ def build(inp: Inputs, target_hexes: int = 5000, log: Callable = lambda *_: None
     river = np.zeros(n, bool)
     river_lines = []
     for name, rank, g in inp.rivers:
-        gp = proj.geom(g).intersection(frame_box)
+        gp = P(g).intersection(frame_box)
         if gp.is_empty:
             continue
         lines = list(gp.geoms) if hasattr(gp, "geoms") else [gp]
@@ -239,7 +292,7 @@ def build(inp: Inputs, target_hexes: int = 5000, log: Callable = lambda *_: None
 
     # states
     state_id = np.full(n, -1, dtype=np.int32)
-    st_geoms = [shapely.make_valid(proj.geom(g)) for _, g in inp.states]
+    st_geoms = [P(g) for _, g in inp.states]
     own_idx = np.where(owner == 0)[0]
     if st_geoms:
         tree = shapely.STRtree(st_geoms)
@@ -291,7 +344,9 @@ def build(inp: Inputs, target_hexes: int = 5000, log: Callable = lambda *_: None
             kept.append(it)
         return np.array(idx, int), kept
 
-    _, cities = locate(sorted(inp.cities, key=lambda c: -c["pop"]))
+    _, cities = locate(merge_urban_duplicates(
+        [c for c in inp.cities if c.get("fcode") != "PPLX"],  # PPLX = a section of a bigger place
+        lambda c: proj.forward(c["lon"], c["lat"]), size))
     _, airports = locate(inp.airports)
     _, ports = locate(inp.ports)
     _, power = locate(inp.power)
@@ -397,8 +452,10 @@ def build(inp: Inputs, target_hexes: int = 5000, log: Callable = lambda *_: None
                             "hexes": int(m.sum())})
     regions = []
     for name, kind, rank, g in inp.regions:
-        gp = proj.geom(g)
-        if not gp.intersects(land_p) or rank > 5:
+        if rank > 5:
+            continue
+        gp = P(g)
+        if gp.is_empty or not gp.intersects(land_p):
             continue
         inter = gp.intersection(land_p)
         if inter.area < 0.1 * gp.area or inter.area < 12 * hex_area:
@@ -407,7 +464,7 @@ def build(inp: Inputs, target_hexes: int = 5000, log: Callable = lambda *_: None
         regions.append({"n": name, "k": kind, "x": round(pt.x, 1), "y": round(pt.y, 1), "r": rank})
     seas = []
     for name, rank, g in inp.seas:
-        gp = proj.geom(g).intersection(frame_box)
+        gp = P(g).intersection(frame_box)
         if gp.is_empty or gp.area < 30 * hex_area:
             continue
         pt = gp.representative_point()
@@ -559,6 +616,22 @@ def _bbox_lonlat(geom, pad_deg):
     return (max(a - pad_deg, -180), max(b - pad_deg, -89), min(c + pad_deg, 180), min(d + pad_deg, 89))
 
 
+def cross_check_populations(cities: list[dict], tag: str, top: int = 150, lookup=None) -> list[dict]:
+    """GeoNames occasionally gives a town its whole district's population.
+    For the biggest entries, compare with Wikidata (matched on the GeoNames id)
+    and keep the smaller figure when they disagree by more than 2x."""
+    lookup = lookup or sources.wikidata_populations
+    big = sorted(cities, key=lambda c: -c["pop"])[:top]
+    wd = lookup([c["gid"] for c in big if c.get("gid")], tag)
+    out = []
+    for c in cities:
+        p = wd.get(c.get("gid"))
+        if p and 0 < p < 0.5 * c["pop"]:
+            c = dict(c, pop=int(p), popSource="Wikidata")
+        out.append(c)
+    return out
+
+
 def gather(query: str, target_hexes: int = 5000, log: Callable = print) -> Inputs:
     """Download (or read from cache) every dataset for one country."""
     base = sources.natural_earth("ne_10m_admin_0_countries")
@@ -595,8 +668,8 @@ def gather(query: str, target_hexes: int = 5000, log: Callable = print) -> Input
             neighbours.append((p.get("NAME") or p.get("NAME_EN"), shapely.make_valid(geom)))
 
     admin1 = sources.natural_earth("ne_10m_admin_1_states_provinces")
-    states = [(g["properties"]["name"] or g["properties"].get("name_en") or "?", shapely.make_valid(shape(g["geometry"])))
-              for g in admin1["features"] if g["properties"].get("adm0_a3") == iso3]
+    units = [g for g in admin1["features"] if g["properties"].get("adm0_a3") == iso3]
+    states = group_admin1(units)
 
     rivers = []
     for g in sources.natural_earth("ne_10m_rivers_lake_centerlines")["features"]:
@@ -605,7 +678,8 @@ def gather(query: str, target_hexes: int = 5000, log: Callable = print) -> Input
             p = g["properties"]
             rivers.append((p.get("name_en") or p.get("name") or "", p.get("scalerank") or 9, geom))
     lakes = [shape(g["geometry"]) for g in sources.natural_earth("ne_10m_lakes")["features"]
-             if shape(g["geometry"]).intersects(frame)]
+             if g["properties"].get("featurecla") != "Alkaline Lake"  # mostly dry salt pans
+             and shape(g["geometry"]).intersects(frame)]
     regions = []
     for g in sources.natural_earth("ne_10m_geography_regions_polys")["features"]:
         p = g["properties"]
@@ -623,6 +697,10 @@ def gather(query: str, target_hexes: int = 5000, log: Callable = print) -> Input
 
     log("cities, airports, ports, power plants…")
     cities = sources.cities(iso2)
+    try:
+        cities = cross_check_populations(cities, iso2)
+    except Exception as exc:
+        log(f"  (population cross-check skipped: {exc})")
     airports = sources.airports(iso2)
     ports = sources.ports(bbox)
     power = sources.power_plants(iso3)

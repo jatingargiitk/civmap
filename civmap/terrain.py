@@ -32,7 +32,7 @@ def classify_land(elev, relief, rain_mm, temp_c):
     temp = np.asarray(temp_c, float)
 
     terrain = np.full(elev.shape, PLAINS, dtype=np.int8)
-    terrain[rain >= 900] = GRASSLAND
+    terrain[(rain >= 900) | ((rain >= 600) & (temp < 15))] = GRASSLAND
     terrain[(rain < 300) | ((rain < 450) & (temp > 20))] = DESERT
     terrain[temp < 1.0] = TUNDRA
     terrain[temp < -7.0] = SNOW
