@@ -120,6 +120,7 @@ def parse_geonames(lines: Iterable[str], iso2: str) -> list[dict]:
             continue
         row = dict(zip(GEONAMES_COLS, parts))
         out.append({
+            "gid": row["geonameid"],
             "name": row["name"],
             "lat": float(row["lat"]),
             "lon": float(row["lon"]),
@@ -246,8 +247,8 @@ def nasa_power_grid(param: str, bbox: tuple[float, float, float, float]) -> list
 # ---------------------------------------------------------------- Wikidata
 WIKIDATA_QUERIES = {
     "heritage": """
-SELECT ?item ?itemLabel ?coord ?natural WHERE {{
-  ?item wdt:P1435 wd:Q9259; wdt:P17 wd:{qid}; wdt:P625 ?coord.
+SELECT ?item ?itemLabel ?coord ?whs ?natural WHERE {{
+  ?item wdt:P1435 wd:Q9259; wdt:P17 wd:{qid}; wdt:P625 ?coord; wdt:P757 ?whs.
   OPTIONAL {{ ?item wdt:P31/wdt:P279* wd:Q473972. BIND(1 AS ?natural) }}
   SERVICE wikibase:label {{ bd:serviceParam wikibase:language "en". }}
 }}""",
@@ -279,7 +280,32 @@ def parse_sparql(payload: dict) -> list[dict]:
                                     "natural": False})
         if "natural" in b:
             rec["natural"] = True
+        if "whs" in b:
+            rec.setdefault("whs", set()).add(b["whs"]["value"])
     return list(seen.values())
+
+
+def dedupe_heritage(records: list[dict]) -> list[dict]:
+    """One wonder per inscribed World Heritage property.
+
+    Wikidata tags every component of a serial site (and every extension) with
+    the property's id, e.g. "335", "335-001", "335bis". Group on the leading
+    number and keep the item that carries the bare id when there is one.
+    """
+    groups: dict[str, list[tuple[bool, dict]]] = {}
+    for r in records:
+        for w in sorted(r.get("whs") or []):
+            num = "".join(ch for ch in w.split("-")[0] if ch.isdigit())
+            if num:
+                groups.setdefault(num, []).append((w == num, r))
+    out = []
+    for num, items in sorted(groups.items(), key=lambda kv: int(kv[0])):
+        items.sort(key=lambda t: (not t[0], len(t[1]["name"])))
+        best = dict(items[0][1])
+        best["natural"] = any(r["natural"] for _, r in items)
+        best["whs"] = num
+        out.append(best)
+    return out
 
 
 def wikidata(kind: str, country_qid: str) -> list[dict]:
@@ -288,7 +314,33 @@ def wikidata(kind: str, country_qid: str) -> list[dict]:
                 data=("query=" + _urlquote(q)).encode(),
                 headers={"Accept": "application/sparql-results+json",
                          "Content-Type": "application/x-www-form-urlencoded"})
-    return parse_sparql(json.loads(raw))
+    recs = parse_sparql(json.loads(raw))
+    if kind == "heritage":
+        return dedupe_heritage(recs)
+    for r in recs:
+        r.pop("whs", None)
+    return recs
+
+
+def wikidata_populations(geoname_ids: list[str], tag: str) -> dict[str, float]:
+    """Latest Wikidata population (P1082) for places, keyed by GeoNames id (P1566)."""
+    if not geoname_ids:
+        return {}
+    values = " ".join(f'"{g}"' for g in geoname_ids)
+    q = ("SELECT ?gid ?pop ?date WHERE { VALUES ?gid { " + values + " } ?item wdt:P1566 ?gid; "
+         "p:P1082 ?st. ?st ps:P1082 ?pop. OPTIONAL { ?st pq:P585 ?date. } }")
+    raw = fetch(WIKIDATA_SPARQL, f"wikidata/pop_{tag}.json",
+                data=("query=" + _urlquote(q)).encode(),
+                headers={"Accept": "application/sparql-results+json",
+                         "Content-Type": "application/x-www-form-urlencoded"})
+    best: dict[str, tuple[str, float]] = {}
+    for b in json.loads(raw)["results"]["bindings"]:
+        gid = b["gid"]["value"]
+        date = b.get("date", {}).get("value", "")
+        pop = float(b["pop"]["value"])
+        if gid not in best or date > best[gid][0]:
+            best[gid] = (date, pop)
+    return {g: p for g, (_, p) in best.items()}
 
 
 def country_qid(iso2: str) -> str:

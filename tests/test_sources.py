@@ -12,7 +12,7 @@ def test_parse_geonames():
     other = list(row)
     other[8] = "PK"
     out = sources.parse_geonames(["\t".join(row), "\t".join(other)], "IN")
-    assert out == [{"name": "Mumbai", "lat": 19.07283, "lon": 72.88261, "pop": 12691836,
+    assert out == [{"gid": "1275339", "name": "Mumbai", "lat": 19.07283, "lon": 72.88261, "pop": 12691836,
                     "fcode": "PPLA", "admin1": "16"}]
 
 
@@ -79,3 +79,17 @@ def test_world_bank_parses_cached_payload(tmp_path, monkeypatch):
         json.dumps([{"page": 1}, [{"value": 12345, "date": "2024"}]]))
     assert sources.world_bank("TOY", "SP.POP.TOTL") == (12345.0, "2024")
     assert sources.world_bank("TOY", "NY.GDP.MKTP.CD") == (None, None)
+
+
+def test_dedupe_heritage_one_wonder_per_property():
+    recs = [
+        {"id": "Q1", "name": "Nanda Devi and Valley of Flowers National Parks", "lat": 30.7, "lon": 79.9,
+         "natural": True, "whs": {"335", "335bis"}},
+        {"id": "Q2", "name": "Valley of Flowers National Park", "lat": 30.7, "lon": 79.6,
+         "natural": True, "whs": {"335-002"}},
+        {"id": "Q3", "name": "Taj Mahal", "lat": 27.17, "lon": 78.04, "natural": False, "whs": {"252"}},
+        {"id": "Q4", "name": "No id", "lat": 0, "lon": 0, "natural": False},
+    ]
+    out = sources.dedupe_heritage(recs)
+    assert [o["id"] for o in out] == ["Q3", "Q1"]
+    assert out[1]["whs"] == "335" and out[1]["natural"]
