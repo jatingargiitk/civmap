@@ -1,0 +1,34 @@
+[
+ {
+  "iso2": "IN",
+  "name": "India"
+ },
+ {
+  "iso2": "JP",
+  "name": "Japan"
+ },
+ {
+  "iso2": "GB",
+  "name": "United Kingdom"
+ },
+ {
+  "iso2": "IT",
+  "name": "Italy"
+ },
+ {
+  "iso2": "EG",
+  "name": "Egypt"
+ },
+ {
+  "iso2": "BR",
+  "name": "Brazil"
+ },
+ {
+  "iso2": "FR",
+  "name": "France"
+ },
+ {
+  "iso2": "AU",
+  "name": "Australia"
+ }
+]

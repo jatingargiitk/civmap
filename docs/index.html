@@ -1,0 +1,655 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>civmap · Civilization-style maps of real countries</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;800&family=Noto+Sans:wght@400;600&family=Noto+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>:root{--ink:#f3ead7;--gold:#e7c26b;--panel:rgba(14,22,34,.86);--line:rgba(231,194,107,.35)}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:#0d2238;color:var(--ink);font-family:"Cinzel","Noto Serif","Georgia",serif;overflow:hidden}
+#map{position:fixed;inset:0;width:100vw;height:100vh;cursor:grab;display:block}
+#map.drag{cursor:grabbing}
+.panel{position:fixed;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.45);backdrop-filter:blur(4px)}
+#title{left:18px;top:16px;padding:14px 18px 12px 16px;display:flex;gap:14px;align-items:center;max-width:520px}
+#emblem{width:54px;height:54px;flex:none}
+#title h1{margin:0;font-size:30px;letter-spacing:.14em;font-weight:700;color:var(--gold);line-height:1}
+#title .sub{font-family:"Noto Serif",Georgia,serif;font-style:italic;font-size:13px;opacity:.85;margin-top:5px}
+#picker{margin-top:8px;font:13px "Noto Sans",system-ui,sans-serif}
+#picker select{background:#13263b;color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:3px 6px;font:inherit}
+#stats{left:18px;top:118px;padding:8px 12px;display:flex;gap:16px;font:12px "Noto Sans",system-ui,sans-serif}
+#stats b{display:block;font:600 16px "Noto Sans",system-ui,sans-serif;color:#fff}
+#stats span{opacity:.75;text-transform:uppercase;letter-spacing:.08em;font-size:10px}
+#lenses{right:18px;top:16px;padding:10px;display:flex;flex-direction:column;gap:4px;width:178px}
+#lenses .h{font-size:11px;letter-spacing:.2em;color:var(--gold);padding:2px 6px 6px}
+#lenses button{all:unset;cursor:pointer;padding:6px 9px;border-radius:6px;font:13px "Noto Sans",system-ui,sans-serif;display:flex;gap:8px;align-items:center}
+#lenses button:hover{background:rgba(255,255,255,.07)}
+#lenses button.on{background:linear-gradient(90deg,rgba(231,194,107,.28),rgba(231,194,107,.06));color:#fff}
+#lenses i{width:12px;height:12px;border-radius:3px;display:inline-block;flex:none}
+#legend{left:18px;bottom:16px;padding:9px 13px;max-width:400px;font:11.5px "Noto Sans",system-ui,sans-serif}
+#legend .lens{font-family:"Cinzel",Georgia,serif;color:var(--gold);letter-spacing:.12em;font-size:13px}
+#legend .desc{opacity:.85;margin:3px 0 6px}
+#legend .ramp{height:9px;border-radius:5px;margin:4px 0 2px}
+#legend .ends{display:flex;justify-content:space-between;opacity:.7;font-size:11px}
+#legend .src{opacity:.6;font-size:10.5px;margin-top:6px}
+#card{right:18px;bottom:16px;width:330px;padding:14px 16px;font:13px "Noto Sans",system-ui,sans-serif;display:none;max-height:60vh;overflow:auto}
+#card h2{margin:0 0 2px;font:700 20px "Cinzel",Georgia,serif;color:var(--gold);letter-spacing:.06em}
+#card .ep{font-style:italic;opacity:.8;font-family:"Noto Serif",Georgia,serif}
+#card .d{display:flex;gap:10px;margin-top:10px;align-items:flex-start}
+#card .d canvas{flex:none}
+#card .d small{display:block;opacity:.75}
+#card .x{position:absolute;right:10px;top:8px;cursor:pointer;opacity:.6}
+#tip{position:fixed;pointer-events:none;padding:7px 10px;font:12px "Noto Sans",system-ui,sans-serif;display:none;max-width:280px;line-height:1.45}
+#tip b{color:var(--gold)}
+#credit{position:fixed;right:18px;bottom:6px;font:10px "Noto Sans",system-ui,sans-serif;opacity:.55}
+#credit a{color:inherit}
+body.hero #lenses button:not(.on){opacity:.75}
+body.hero #credit{display:none}
+@media (max-width:760px){#lenses{top:auto;bottom:16px;width:150px}#stats{display:none}#legend{display:none}#title h1{font-size:22px}}
+</style>
+</head>
+<body>
+<canvas id="map"></canvas>
+<div id="title" class="panel"><canvas id="emblem" width="108" height="108"></canvas><div><h1 id="cname">civmap</h1><div class="sub">A strategy-map atlas built from open data</div><div id="picker"></div></div></div>
+<div id="stats" class="panel"></div>
+<div id="lenses" class="panel"><div class="h">LENSES</div></div>
+<div id="legend" class="panel"></div>
+<div id="card" class="panel"></div>
+<div id="tip" class="panel"></div>
+<div id="credit">made with <a href="https://github.com/jatingargiitk/civmap">civmap</a> · inspired by <a href="https://karpathy.ai/usaciv/">Karpathy's usaciv</a></div>
+<script>window.CIVMAP_INDEX=[{"iso2": "IN", "name": "India"}, {"iso2": "JP", "name": "Japan"}, {"iso2": "GB", "name": "United Kingdom"}, {"iso2": "IT", "name": "Italy"}, {"iso2": "EG", "name": "Egypt"}, {"iso2": "BR", "name": "Brazil"}, {"iso2": "FR", "name": "France"}, {"iso2": "AU", "name": "Australia"}];</script>
+<script>/* civmap viewer: draws a civmap JSON as a Civilization-style hex map on a canvas.
+   No dependencies. Data comes from window.CIVMAP_DATA (single-file export) or
+   from window.CIVMAP_INDEX (gallery with a country picker). */
+(function () {
+  "use strict";
+  const SQ3 = Math.sqrt(3);
+  const cv = document.getElementById("map");
+  let ctx = cv.getContext("2d");
+  const params = new URLSearchParams(location.search);
+  const HERO = params.has("hero");
+  if (HERO) document.body.classList.add("hero");
+
+  // ------------------------------------------------------------------ palettes
+  const TER = [
+    [27, 72, 116],   // ocean
+    [58, 121, 163],  // coast
+    [72, 139, 186],  // lake
+    [118, 158, 72],  // grassland
+    [174, 166, 92],  // plains
+    [222, 196, 132], // desert
+    [146, 150, 128], // tundra
+    [232, 238, 242], // snow
+    [128, 116, 102], // mountains
+  ];
+  const TER_NAME = ["Ocean", "Coast", "Lake", "Grassland", "Plains", "Desert", "Tundra", "Snow", "Mountains"];
+  const FEAT_NAME = ["", "Forest", "Jungle", "Floodplains", "Marsh"];
+  const ramp = (stops) => (t) => {
+    t = Math.max(0, Math.min(1, t));
+    const n = stops.length - 1, i = Math.min(n - 1, Math.floor(t * n)), f = t * n - i;
+    const a = stops[i], b = stops[i + 1];
+    return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
+  };
+  const R = {
+    relief: ramp([[46, 110, 70], [120, 160, 80], [214, 200, 120], [182, 128, 74], [128, 92, 72], [240, 240, 240]]),
+    rain: ramp([[214, 170, 104], [230, 214, 140], [140, 190, 100], [52, 140, 98], [32, 98, 150], [40, 50, 130]]),
+    temp: ramp([[60, 80, 170], [110, 170, 220], [235, 235, 200], [240, 170, 80], [205, 60, 50]]),
+    food: ramp([[70, 60, 50], [140, 150, 70], [120, 200, 70], [210, 245, 120]]),
+    prod: ramp([[60, 52, 48], [150, 100, 60], [230, 140, 50], [255, 210, 120]]),
+    gold: ramp([[50, 46, 40], [140, 115, 50], [235, 190, 60], [255, 240, 160]]),
+    sci: ramp([[40, 48, 70], [60, 110, 190], [100, 190, 255], [220, 245, 255]]),
+    cul: ramp([[50, 40, 60], [130, 70, 160], [210, 110, 220], [255, 210, 250]]),
+    cit: ramp([[40, 40, 50], [120, 60, 120], [230, 90, 120], [255, 220, 150]]),
+    mw: ramp([[45, 45, 50], [120, 90, 40], [240, 170, 40], [255, 245, 170]]),
+  };
+  const LENSES = [
+    { id: "terrain", name: "Terrain", c: "#7a9e48", desc: "Land cover from relief and climate, rivers, resources and wonders." },
+    { id: "relief", name: "Relief", c: "#b8804a", desc: "Mean elevation of each hex (Mapzen/AWS Terrain Tiles).", key: "e", f: (v) => Math.pow(Math.max(0, v) / 5500, 0.5), ends: ["0 m", "5,500 m"] },
+    { id: "rain", name: "Rainfall", c: "#3a8fb0", desc: "Mean annual precipitation, NASA POWER climatology.", key: "p", f: (v) => Math.pow(v / 3500, 0.7), ends: ["0 mm", "3,500+ mm/yr"] },
+    { id: "temp", name: "Temperature", c: "#e08a4a", desc: "Mean annual air temperature, adjusted to hex elevation.", key: "tc", f: (v) => (v + 15) / 45, ends: ["-15 °C", "30 °C"] },
+    { id: "food", name: "Food", c: "#8fd14f", desc: "Civ-style food yield: terrain, rivers and floodplains.", key: "food", f: (v) => v / 4, ends: ["0", "4"] },
+    { id: "prod", name: "Production", c: "#e88a32", desc: "Hills and forests, plus +1 per 500 MW of power plants (WRI).", key: "prod", f: (v) => v / 5, ends: ["0", "5+"] },
+    { id: "gold", name: "Gold", c: "#e7c26b", desc: "Trade proxy: airports, seaports and city size. Not GDP.", key: "gold", f: (v) => v / 6, ends: ["0", "6+"] },
+    { id: "sci", name: "Science", c: "#5aa9f0", desc: "Universities per hex (Wikidata).", key: "sci", f: (v) => Math.log1p(v) / Math.log1p(40), ends: ["0", "40+"] },
+    { id: "cul", name: "Culture", c: "#c46ad6", desc: "World Heritage sites (+3) and national parks (+1), Wikidata.", key: "cul", f: (v) => v / 6, ends: ["0", "6+"] },
+    { id: "cit", name: "Citizens", c: "#e0607a", desc: "Population of GeoNames places (15k+) in each hex.", key: "cit", f: (v) => v > 0 ? Math.log10(v / 1.5e4) / Math.log10(2e7 / 1.5e4) : 0, ends: ["15K", "20M"] },
+    { id: "mw", name: "Power", c: "#f2b33d", desc: "Installed power-plant capacity in each hex (WRI GPPD).", key: "mw", f: (v) => v > 0 ? Math.log10(1 + v) / Math.log10(1 + 8000) : 0, ends: ["0 MW", "8,000 MW"] },
+  ];
+  const DISTRICT = {
+    campus: { c: "#3d7fd6", name: "Campus" }, industrial: { c: "#d9822b", name: "Industrial Zone" },
+    harbor: { c: "#2a9fae", name: "Harbor" }, aerodrome: { c: "#7d8a99", name: "Aerodrome" },
+    theater: { c: "#a35bc9", name: "Theater Square" }, preserve: { c: "#4c9a4a", name: "Preserve" },
+    government: { c: "#c9a23a", name: "Government Plaza" },
+  };
+  const RES = {
+    coal: "#2b2b2b", gas: "#3c78c8", oil: "#5a4632", uranium: "#9cc43a", hydro: "#2d8fd5",
+    solar: "#f2b31d", wind: "#d9e3ea", geothermal: "#c4513a", biomass: "#6c9a3a", other: "#888",
+    airport: "#5d6b7c", port: "#2a8a9a",
+  };
+
+  // ------------------------------------------------------------------ state
+  let D = null, N = 0, cx = [], cy = [], nb = null, shade = null, jit = null;
+  let cam = { x: 0, y: 0, s: 1 }, lens = params.get("lens") || "terrain", hoverHex = -1, sel = null;
+  let W = 0, H = 0, DPR = 1, dirty = true;
+  const stateColor = {};
+
+  function hash(a, b) { let h = (a * 374761393 + b * 668265263) | 0; h = (h ^ (h >>> 13)) * 1274126177; return ((h ^ (h >>> 16)) >>> 0) / 4294967295; }
+  const rgb = (c, a) => a === undefined ? `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})` : `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`;
+  const mix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+  const hex2rgb = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+  const fmt = (n) => n >= 1e12 ? (n / 1e12).toFixed(2) + "T" : n >= 1e9 ? (n / 1e9).toFixed(1) + "B" : n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? Math.round(n / 1e3) + "K" : String(Math.round(n));
+
+  function load(data) {
+    D = data; const h = D.hex, S = D.meta.hexSize; N = h.q.length;
+    cx = new Float32Array(N); cy = new Float32Array(N);
+    const idx = new Map();
+    for (let i = 0; i < N; i++) { cx[i] = S * SQ3 * (h.q[i] + h.r[i] / 2); cy[i] = S * 1.5 * h.r[i]; idx.set(h.q[i] * 100000 + h.r[i], i); }
+    const E = [[1, -1], [1, 0], [0, 1], [-1, 1], [-1, 0], [0, -1]];
+    nb = new Int32Array(N * 6);
+    for (let i = 0; i < N; i++) for (let k = 0; k < 6; k++) { const j = idx.get((h.q[i] + E[k][0]) * 100000 + h.r[i] + E[k][1]); nb[i * 6 + k] = j === undefined ? -1 : j; }
+    D._idx = idx;
+    // hillshade (light from the north-west) + texture jitter
+    shade = new Float32Array(N); jit = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      jit[i] = hash(h.q[i], h.r[i]) - 0.5;
+      if (h.o[i] === 2) continue;
+      const g = (k) => { const j = nb[i * 6 + k]; return j < 0 || h.o[j] === 2 ? h.e[i] : h.e[j]; };
+      const dx = (g(1) - g(4)) / (2 * S * SQ3), dy = ((g(2) + g(3)) - (g(0) + g(5))) / (2 * 3 * S);
+      shade[i] = Math.max(-1, Math.min(1, -(dx + dy) * 0.012));
+    }
+    for (const s of D.states) stateColor[s.id] = hex2rgb(s.color);
+    document.getElementById("cname").textContent = D.meta.name.toUpperCase();
+    document.title = D.meta.name + " · civmap";
+    stats(); fit(); dirty = true; sel = null; hideCard(); legend();
+    const tb = document.getElementById("title"); document.getElementById("stats").style.top = (tb.offsetTop + tb.offsetHeight + 8) + "px";
+  }
+
+  function fit() {
+    // fit the bulk of the country (1st-99th percentile) so a few remote islets don't shrink the view
+    const h = D.hex, xs = [], ys = [];
+    for (let i = 0; i < N; i++) if (h.o[i] === 0) { xs.push(cx[i]); ys.push(cy[i]); }
+    xs.sort((p, q) => p - q); ys.sort((p, q) => p - q);
+    const pc = (arr, f) => arr[Math.min(arr.length - 1, Math.max(0, Math.round(f * (arr.length - 1))))];
+    const a = pc(xs, 0.01), c = pc(xs, 0.99), b = pc(ys, 0.01), d = pc(ys, 0.99);
+    const padL = W > 900 ? 200 : 20, padR = W > 900 ? 210 : 20, padT = 50, padB = W > 900 ? 70 : 40;
+    cam.s = Math.min((W - padL - padR) / (c - a), (H - padT - padB) / (d - b));
+    cam.x = (a + c) / 2 - (padL - padR) / 2 / cam.s; cam.y = (b + d) / 2;
+  }
+
+  const sx = (x) => (x - cam.x) * cam.s + W / 2, sy = (y) => (y - cam.y) * cam.s + H / 2;
+  const wx = (X) => (X - W / 2) / cam.s + cam.x, wy = (Y) => (Y - H / 2) / cam.s + cam.y;
+
+  // ------------------------------------------------------------------ drawing
+  function hexPath(X, Y, r) {
+    ctx.moveTo(X, Y - r);
+    ctx.lineTo(X + r * SQ3 / 2, Y - r / 2); ctx.lineTo(X + r * SQ3 / 2, Y + r / 2);
+    ctx.lineTo(X, Y + r); ctx.lineTo(X - r * SQ3 / 2, Y + r / 2); ctx.lineTo(X - r * SQ3 / 2, Y - r / 2); ctx.closePath();
+  }
+
+  function terrainColor(i) {
+    const h = D.hex; const t = h.t[i];
+    let c = TER[t];
+    if (t === 0) { const d = Math.max(0, -h.e[i]); c = d < 200 ? mix([62, 128, 170], [42, 96, 142], d / 200) : mix([40, 92, 138], [14, 40, 76], Math.min(1, Math.pow((d - 200) / 4500, 0.6))); }
+    if (t === 1) c = mix([84, 150, 182], [50, 112, 160], Math.min(1, Math.max(0, -h.e[i] / 120)));
+    if (h.f[i] === 1) c = mix(c, [64, 112, 56], 0.55);
+    if (h.f[i] === 2) c = mix(c, [40, 104, 52], 0.7);
+    if (h.f[i] === 3) c = mix(c, [112, 158, 66], 0.62);
+    if (h.h[i] && t !== 8) c = mix(c, [150, 128, 90], 0.18);
+    if (t === 8 && h.e[i] > 4600) c = mix(c, [225, 230, 236], 0.55);
+    return c;
+  }
+
+  function lensColor(i) {
+    const L = LENSES.find((l) => l.id === lens);
+    const h = D.hex;
+    if (!L || !L.key) return terrainColor(i);
+    if (h.o[i] === 2) return mix(terrainColor(i), [10, 20, 35], 0.35);
+    const v = h[L.key][i];
+    const base = mix(terrainColor(i), [70, 70, 70], 0.55);
+    if (["food", "prod", "gold", "sci", "cul", "cit", "mw"].includes(lens) && v <= 0) return mix(base, [20, 20, 25], 0.35);
+    return R[L.id](L.f(v));
+  }
+
+  function draw() {
+    dirty = false;
+    if (!D) return;
+    const h = D.hex, S = D.meta.hexSize, r = S * cam.s, zoom = r;
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx.fillStyle = "#0c243e"; ctx.fillRect(0, 0, W, H);
+    const x0 = wx(-r * 2), x1 = wx(W + r * 2), y0 = wy(-r * 2), y1 = wy(H + r * 2);
+    const vis = [];
+    for (let i = 0; i < N; i++) if (cx[i] > x0 && cx[i] < x1 && cy[i] > y0 && cy[i] < y1) vis.push(i);
+    const terr = lens === "terrain";
+    // tiles
+    for (const i of vis) {
+      let c = terr ? terrainColor(i) : lensColor(i);
+      const o = h.o[i];
+      if (o !== 2) {
+        const k = 1 + shade[i] * (terr ? 0.55 : 0.25) + jit[i] * 0.07;
+        c = [c[0] * k, c[1] * k, c[2] * k];
+        if (o === 1) c = mix(mix(c, [140, 136, 126], 0.6), [26, 32, 42], 0.5);
+        else if (h.s[i] >= 0 && terr) c = mix(c, stateColor[h.s[i]] || c, 0.07);
+      } else {
+        const k = 1 + jit[i] * 0.05; c = [c[0] * k, c[1] * k, c[2] * k];
+      }
+      ctx.beginPath(); hexPath(sx(cx[i]), sy(cy[i]), r * 1.01); ctx.fillStyle = rgb(c); ctx.fill();
+    }
+    // hex outlines
+    if (zoom > 3.2) {
+      ctx.beginPath();
+      for (const i of vis) hexPath(sx(cx[i]), sy(cy[i]), r);
+      ctx.strokeStyle = `rgba(0,0,0,${Math.min(0.16, 0.03 * zoom)})`; ctx.lineWidth = 0.6; ctx.stroke();
+    }
+    if (terr) decorations(vis, r);
+    edgeFade(r);
+    rivers(r);
+    borders(r);
+    labels(r, vis);
+    if (hoverHex >= 0) { ctx.beginPath(); hexPath(sx(cx[hoverHex]), sy(cy[hoverHex]), r); ctx.strokeStyle = "#fff6d0"; ctx.lineWidth = 2; ctx.stroke(); }
+    window.CIVMAP_READY = true;
+  }
+
+  function edgeFade(r) {
+    const f = D.frame, w = Math.max(30, r * 6);
+    const X0 = sx(f[0]), Y0 = sy(f[1]), X1 = sx(f[2]), Y1 = sy(f[3]);
+    const bg = "rgba(12,36,62,", sides = [[X0, 0, X0 + w, 0], [X1, 0, X1 - w, 0], [0, Y0, 0, Y0 + w], [0, Y1, 0, Y1 - w]];
+    for (const [a, b, c, d] of sides) {
+      const g = ctx.createLinearGradient(a, b, c, d); g.addColorStop(0, bg + "1)"); g.addColorStop(1, bg + "0)");
+      ctx.fillStyle = g;
+      if (a || c) ctx.fillRect(Math.min(a, c) - (a > c ? 0 : 0), Math.max(0, Y0), Math.abs(c - a), Math.min(H, Y1) - Math.max(0, Y0));
+      else ctx.fillRect(Math.max(0, X0), Math.min(b, d), Math.min(W, X1) - Math.max(0, X0), Math.abs(d - b));
+    }
+    ctx.fillStyle = bg + "1)";
+    ctx.fillRect(0, 0, X0, H); ctx.fillRect(X1, 0, W - X1, H); ctx.fillRect(0, 0, W, Y0); ctx.fillRect(0, Y1, W, H - Y1);
+    const v = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.45, W / 2, H / 2, Math.max(W, H) * 0.75);
+    v.addColorStop(0, "rgba(0,0,0,0)"); v.addColorStop(1, "rgba(0,8,20,0.45)"); ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+  }
+
+  function decorations(vis, r) {
+    const h = D.hex;
+    if (r < 2.2) return;
+    for (const i of vis) {
+      const X = sx(cx[i]), Y = sy(cy[i]), t = h.t[i], f = h.f[i], o = h.o[i];
+      const fade = o === 1 ? 0.45 : 1;
+      if (t === 0 && jit[i] > 0.36 && r > 4) { // waves
+        ctx.strokeStyle = "rgba(170,210,240,0.16)"; ctx.lineWidth = Math.max(0.6, r * 0.07);
+        ctx.beginPath(); ctx.arc(X - r * 0.2, Y, r * 0.22, Math.PI * 1.1, Math.PI * 1.9); ctx.arc(X + r * 0.24, Y, r * 0.22, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke();
+      }
+      if (t === 8) mountain(X, Y, r, h.e[i], fade, jit[i]);
+      else if (h.h[i]) hillGlyph(X, Y, r, fade);
+      if (f === 1 || f === 2) trees(X, Y, r, f === 2, fade, i);
+      if (t === 5 && f === 0 && !h.h[i] && jit[i] > 0.1 && r > 5) { // dunes
+        ctx.strokeStyle = `rgba(160,120,60,${0.35 * fade})`; ctx.lineWidth = Math.max(0.6, r * 0.06);
+        ctx.beginPath(); ctx.moveTo(X - r * 0.45, Y + r * 0.1); ctx.quadraticCurveTo(X - r * 0.15, Y - r * 0.25, X + r * 0.15, Y + r * 0.1); ctx.stroke();
+      }
+      if (f === 3 && r > 4) { // floodplain marks
+        ctx.strokeStyle = `rgba(90,130,60,${0.5 * fade})`; ctx.lineWidth = Math.max(0.5, r * 0.05);
+        ctx.beginPath(); for (let k = -1; k <= 1; k++) { ctx.moveTo(X - r * 0.35, Y + k * r * 0.22); ctx.lineTo(X + r * 0.35, Y + k * r * 0.22); } ctx.stroke();
+      }
+    }
+  }
+
+  function mountain(X, Y, r, e, fade, j) {
+    const w = r * 0.95, hgt = r * (0.95 + j * 0.3);
+    const peak = (px, py, s) => {
+      ctx.beginPath(); ctx.moveTo(px - w * s * 0.55, py + hgt * s * 0.45); ctx.lineTo(px, py - hgt * s * 0.55); ctx.lineTo(px + w * s * 0.55, py + hgt * s * 0.45); ctx.closePath();
+      ctx.fillStyle = `rgba(104,92,80,${0.95 * fade})`; ctx.fill();
+      ctx.beginPath(); ctx.moveTo(px, py - hgt * s * 0.55); ctx.lineTo(px + w * s * 0.55, py + hgt * s * 0.45); ctx.lineTo(px + w * s * 0.1, py + hgt * s * 0.45); ctx.closePath();
+      ctx.fillStyle = `rgba(70,60,54,${0.9 * fade})`; ctx.fill();
+      if (e > 3800) { ctx.beginPath(); ctx.moveTo(px - w * s * 0.18, py - hgt * s * 0.2); ctx.lineTo(px, py - hgt * s * 0.55); ctx.lineTo(px + w * s * 0.18, py - hgt * s * 0.2); ctx.lineTo(px, py - hgt * s * 0.28); ctx.closePath(); ctx.fillStyle = `rgba(245,248,250,${fade})`; ctx.fill(); }
+    };
+    peak(X - r * 0.22, Y + r * 0.08, 0.7); peak(X + r * 0.18, Y - r * 0.02, 0.85);
+  }
+
+  function hillGlyph(X, Y, r, fade) {
+    if (r < 4) return;
+    ctx.strokeStyle = `rgba(92,74,48,${0.45 * fade})`; ctx.lineWidth = Math.max(0.7, r * 0.08);
+    ctx.beginPath(); ctx.arc(X - r * 0.18, Y + r * 0.25, r * 0.3, Math.PI * 1.15, Math.PI * 1.85); ctx.stroke();
+    ctx.beginPath(); ctx.arc(X + r * 0.25, Y + r * 0.32, r * 0.22, Math.PI * 1.15, Math.PI * 1.85); ctx.stroke();
+  }
+
+  function trees(X, Y, r, jungle, fade, i) {
+    const n = r > 9 ? 4 : r > 4 ? 3 : 2;
+    const col = jungle ? [26, 84, 40] : [38, 82, 40];
+    for (let k = 0; k < n; k++) {
+      const a = hash(i, k) * 6.283, d = r * (0.2 + 0.32 * hash(k, i));
+      const tx = X + Math.cos(a) * d, ty = Y + Math.sin(a) * d * 0.8, s = r * (0.2 + 0.08 * hash(i + k, 3));
+      if (jungle) {
+        ctx.beginPath(); ctx.arc(tx, ty, s, 0, 6.283); ctx.fillStyle = rgb(col, 0.85 * fade); ctx.fill();
+        ctx.beginPath(); ctx.arc(tx - s * 0.3, ty - s * 0.3, s * 0.45, 0, 6.283); ctx.fillStyle = rgb([70, 140, 70], 0.6 * fade); ctx.fill();
+      } else {
+        ctx.beginPath(); ctx.moveTo(tx, ty - s * 1.4); ctx.lineTo(tx + s * 0.8, ty + s * 0.6); ctx.lineTo(tx - s * 0.8, ty + s * 0.6); ctx.closePath();
+        ctx.fillStyle = rgb(col, 0.9 * fade); ctx.fill();
+      }
+    }
+  }
+
+  function rivers(r) {
+    const scale = Math.max(0.35, Math.min(2.2, r / 7));
+    ctx.lineCap = "round"; ctx.lineJoin = "round";
+    for (const rv of D.rivers) {
+      const p = rv.p; if (p.length < 4) continue;
+      ctx.beginPath(); ctx.moveTo(sx(p[0]), sy(p[1]));
+      for (let k = 2; k < p.length; k += 2) ctx.lineTo(sx(p[k]), sy(p[k + 1]));
+      ctx.strokeStyle = "rgba(20,60,100,0.55)"; ctx.lineWidth = (rv.w * 1.3 + 1.2) * scale; ctx.stroke();
+      ctx.strokeStyle = "#5aa7dc"; ctx.lineWidth = rv.w * 1.3 * scale; ctx.stroke();
+    }
+  }
+
+  function borders(r) {
+    const segs = D.borders;
+    const w = Math.max(1, Math.min(4, r * 0.35));
+    ctx.lineCap = "round";
+    // state borders: thin dashed light lines
+    ctx.beginPath();
+    for (const s of segs.state) { ctx.moveTo(sx(s[0]), sy(s[1])); ctx.lineTo(sx(s[2]), sy(s[3])); }
+    ctx.setLineDash([Math.max(2, w * 1.6), Math.max(2, w * 1.3)]);
+    ctx.strokeStyle = "rgba(255,244,214,0.62)"; ctx.lineWidth = Math.max(0.8, w * 0.42); ctx.stroke();
+    ctx.setLineDash([]);
+    // national border: dark halo + gold line
+    ctx.beginPath();
+    for (const s of segs.country) { ctx.moveTo(sx(s[0]), sy(s[1])); ctx.lineTo(sx(s[2]), sy(s[3])); }
+    ctx.strokeStyle = "rgba(20,14,6,0.55)"; ctx.lineWidth = w * 2.2; ctx.stroke();
+    ctx.strokeStyle = "#e7c26b"; ctx.lineWidth = w * 0.9; ctx.stroke();
+  }
+
+  function spaced(text, X, Y, px, spacing, fill, stroke, font) {
+    ctx.font = font || `700 ${px}px Cinzel, "Noto Serif", Georgia, serif`;
+    const chars = [...text]; let total = 0; const ws = chars.map((c) => { const m = ctx.measureText(c).width; total += m; return m; });
+    total += spacing * (chars.length - 1);
+    let x = X - total / 2;
+    ctx.textBaseline = "middle"; ctx.textAlign = "left";
+    chars.forEach((c, k) => {
+      if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = Math.max(2, px * 0.14); ctx.lineJoin = "round"; ctx.strokeText(c, x, Y); }
+      ctx.fillStyle = fill; ctx.fillText(c, x, Y); x += ws[k] + spacing;
+    });
+    return total;
+  }
+
+  function labels(r, vis) {
+    const zoom = r;
+    // seas
+    for (const s of D.seas) {
+      if (s.r > (zoom > 6 ? 6 : 3)) continue;
+      const px = Math.max(10, Math.min(26, zoom * (s.r <= 1 ? 2.4 : 1.6)));
+      spaced(s.n.toUpperCase(), sx(s.x), sy(s.y), px, px * 0.45, "rgba(170,206,236,0.55)", null, `italic 600 ${px}px "Noto Serif", Georgia, serif`);
+    }
+    // foreign
+    for (const f of D.foreign) {
+      const px = Math.max(10, Math.min(22, Math.sqrt(f.hexes) * zoom * 0.09));
+      spaced(f.name.toUpperCase(), sx(f.x), sy(f.y), px, px * 0.35, "rgba(225,220,205,0.42)", "rgba(0,0,0,0.25)");
+    }
+    // regions
+    if (zoom > 2.5) for (const g of D.regions) {
+      if (g.r > (zoom > 8 ? 5 : 4)) continue;
+      const px = Math.max(9, Math.min(16, zoom * 1.1));
+      spaced(g.n, sx(g.x), sy(g.y), px, px * 0.18, "rgba(70,48,24,0.72)", "rgba(255,240,210,0.35)", `italic 600 ${px}px "Noto Serif", Georgia, serif`);
+    }
+    // states
+    for (const s of D.states) {
+      const px = Math.max(9, Math.min(zoom > 10 ? 30 : 24, Math.sqrt(s.hexes) * zoom * 0.11));
+      if (px < 8.5) continue;
+      spaced(s.name.toUpperCase(), sx(s.lx), sy(s.ly), px, px * 0.28, "rgba(255,248,232,0.72)", "rgba(40,28,10,0.45)");
+    }
+    resources(r);
+    wonders(r);
+    towns(r);
+    cities(r);
+  }
+
+  function badge(X, Y, rad, color, glyph) {
+    ctx.beginPath(); ctx.arc(X, Y, rad + 1.2, 0, 6.283); ctx.fillStyle = "rgba(15,12,8,0.75)"; ctx.fill();
+    ctx.beginPath(); ctx.arc(X, Y, rad, 0, 6.283); ctx.fillStyle = color; ctx.fill();
+    ctx.strokeStyle = "rgba(255,240,200,0.85)"; ctx.lineWidth = Math.max(0.8, rad * 0.14); ctx.stroke();
+    if (glyph) icon(glyph, X, Y, rad * 0.62);
+  }
+
+  function icon(k, X, Y, s) {
+    ctx.save(); ctx.translate(X, Y); ctx.fillStyle = "#fff"; ctx.strokeStyle = "#fff"; ctx.lineWidth = Math.max(0.8, s * 0.2); ctx.lineCap = "round"; ctx.lineJoin = "round";
+    const P = (pts, close = true, fill = true) => { ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p[0] * s, p[1] * s) : ctx.moveTo(p[0] * s, p[1] * s)); if (close) ctx.closePath(); fill ? ctx.fill() : ctx.stroke(); };
+    switch (k) {
+      case "campus": P([[-1, -0.25], [0, -0.75], [1, -0.25], [0, 0.25]]); P([[-0.55, 0.05], [-0.55, 0.55], [0, 0.85], [0.55, 0.55], [0.55, 0.05], [0, 0.35]]); break;
+      case "industrial": ctx.beginPath(); for (let a = 0; a < 8; a++) { const t = a * Math.PI / 4; ctx.moveTo(Math.cos(t) * 0.55 * s, Math.sin(t) * 0.55 * s); ctx.lineTo(Math.cos(t) * 0.95 * s, Math.sin(t) * 0.95 * s); } ctx.lineWidth = s * 0.32; ctx.stroke(); ctx.beginPath(); ctx.arc(0, 0, 0.6 * s, 0, 6.283); ctx.fill(); ctx.beginPath(); ctx.arc(0, 0, 0.25 * s, 0, 6.283); ctx.fillStyle = "#d9822b"; ctx.fill(); break;
+      case "harbor": case "port": P([[0, -0.85], [0, 0.8]], false, false); P([[-0.4, -0.45], [0.4, -0.45]], false, false); ctx.beginPath(); ctx.arc(0, 0.05, 0.75 * s, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke(); break;
+      case "aerodrome": case "airport": P([[0, -1], [0.14, -0.3], [0.95, 0.15], [0.95, 0.35], [0.14, 0.12], [0.1, 0.65], [0.38, 0.9], [-0.38, 0.9], [-0.1, 0.65], [-0.14, 0.12], [-0.95, 0.35], [-0.95, 0.15], [-0.14, -0.3]]); break;
+      case "theater": P([[-0.85, -0.7], [0.85, -0.7], [0.75, 0.1], [0, 0.85], [-0.75, 0.1]]); ctx.fillStyle = "#a35bc9"; ctx.beginPath(); ctx.arc(-0.35 * s, -0.25 * s, 0.16 * s, 0, 6.283); ctx.arc(0.35 * s, -0.25 * s, 0.16 * s, 0, 6.283); ctx.fill(); ctx.beginPath(); ctx.arc(0, 0.1 * s, 0.35 * s, 0.15 * Math.PI, 0.85 * Math.PI); ctx.lineWidth = s * 0.14; ctx.strokeStyle = "#a35bc9"; ctx.stroke(); break;
+      case "preserve": P([[0, -0.95], [0.7, 0.35], [0.2, 0.35], [0.2, 0.9], [-0.2, 0.9], [-0.2, 0.35], [-0.7, 0.35]]); break;
+      case "government": P([[-0.9, -0.3], [0, -0.9], [0.9, -0.3]]); for (const x of [-0.6, -0.2, 0.2, 0.6]) P([[x - 0.1, -0.2], [x + 0.1, -0.2], [x + 0.1, 0.55], [x - 0.1, 0.55]]); P([[-0.9, 0.62], [0.9, 0.62], [0.9, 0.85], [-0.9, 0.85]]); break;
+      case "coal": for (const [x, y, r] of [[-0.35, 0.2, 0.42], [0.35, 0.25, 0.4], [0, -0.3, 0.42]]) { ctx.beginPath(); ctx.arc(x * s, y * s, r * s, 0, 6.283); ctx.fillStyle = "#6a6a6a"; ctx.fill(); } break;
+      case "oil": case "gas": P([[0, -0.95], [0.6, 0.15], [0.62, 0.35], [0.4, 0.75], [0, 0.9], [-0.4, 0.75], [-0.62, 0.35], [-0.6, 0.15]]); break;
+      case "uranium": for (let a = 0; a < 3; a++) { const t = a * 2.094 - Math.PI / 2; ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, 0.9 * s, t - 0.5, t + 0.5); ctx.closePath(); ctx.fill(); } ctx.beginPath(); ctx.arc(0, 0, 0.18 * s, 0, 6.283); ctx.fill(); break;
+      case "hydro": for (const y of [-0.35, 0.1, 0.55]) { ctx.beginPath(); ctx.moveTo(-0.8 * s, y * s); ctx.quadraticCurveTo(-0.4 * s, (y - 0.3) * s, 0, y * s); ctx.quadraticCurveTo(0.4 * s, (y + 0.3) * s, 0.8 * s, y * s); ctx.stroke(); } break;
+      case "solar": ctx.beginPath(); ctx.arc(0, 0, 0.42 * s, 0, 6.283); ctx.fill(); ctx.beginPath(); for (let a = 0; a < 8; a++) { const t = a * Math.PI / 4; ctx.moveTo(Math.cos(t) * 0.62 * s, Math.sin(t) * 0.62 * s); ctx.lineTo(Math.cos(t) * 0.98 * s, Math.sin(t) * 0.98 * s); } ctx.stroke(); break;
+      case "wind": ctx.strokeStyle = "#445"; ctx.fillStyle = "#445"; for (let a = 0; a < 3; a++) { const t = a * 2.094 - Math.PI / 2; P([[0, 0], [Math.cos(t - 0.25) * 0.9, Math.sin(t - 0.25) * 0.9], [Math.cos(t) * 0.95, Math.sin(t) * 0.95]]); } break;
+      case "wonder": P(star(5, 1, 0.45)); break;
+      default: ctx.beginPath(); ctx.arc(0, 0, 0.5 * s, 0, 6.283); ctx.fill();
+    }
+    ctx.restore();
+  }
+  function star(n, R1, R2) { const pts = []; for (let k = 0; k < n * 2; k++) { const a = -Math.PI / 2 + k * Math.PI / n, rr = k % 2 ? R2 : R1; pts.push([Math.cos(a) * rr, Math.sin(a) * rr]); } return pts; }
+
+  function resources(r) {
+    if (r < 2.4 && !HERO) return;
+    const rad = Math.max(4.2, Math.min(9, r * 0.42));
+    const minMW = r < 4 ? 1500 : r < 7 ? 600 : 0;
+    for (const s of D.resources) {
+      if (s.k === "port" || s.k === "airport") { if (r < 5) continue; }
+      else if (s.mw < minMW) continue;
+      badge(sx(s.x), sy(s.y), rad, RES[s.k] || "#888", s.k);
+    }
+  }
+
+  function wonders(r) {
+    const rad = Math.max(5.5, Math.min(11, r * 0.5));
+    for (const w of D.wonders) {
+      const X = sx(w.x), Y = sy(w.y);
+      if (X < -20 || Y < -20 || X > W + 20 || Y > H + 20) continue;
+      ctx.beginPath(); ctx.arc(X, Y, rad * 1.7, 0, 6.283);
+      const g = ctx.createRadialGradient(X, Y, 0, X, Y, rad * 1.7); g.addColorStop(0, w.natural ? "rgba(120,230,140,0.55)" : "rgba(255,215,110,0.6)"); g.addColorStop(1, "rgba(255,215,110,0)");
+      ctx.fillStyle = g; ctx.fill();
+      badge(X, Y, rad, w.natural ? "#3f9a58" : "#c9962a", "wonder");
+      if (r > 14) { const nm = w.n.length > 42 ? w.n.slice(0, 40) + "…" : w.n; ctx.font = `italic 600 ${Math.min(14, r * 0.55)}px "Noto Serif", Georgia, serif`; ctx.textAlign = "center"; ctx.textBaseline = "top"; ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.6)"; ctx.strokeText(nm, X, Y + rad + 3); ctx.fillStyle = "#ffe7a8"; ctx.fillText(nm, X, Y + rad + 3); }
+    }
+  }
+
+  function towns(r) {
+    if (r < 6) return;
+    const minPop = r > 16 ? 1e5 : r > 10 ? 3e5 : 6e5;
+    ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    for (const t of D.towns) {
+      if (t.pop < minPop) continue;
+      const X = sx(t.x), Y = sy(t.y);
+      if (X < -50 || Y < -20 || X > W + 50 || Y > H + 20) continue;
+      ctx.beginPath(); ctx.arc(X, Y, 3, 0, 6.283); ctx.fillStyle = "#f6ecd2"; ctx.fill(); ctx.strokeStyle = "#2a1e10"; ctx.lineWidth = 1.2; ctx.stroke();
+      if (r > 9) { ctx.font = `600 ${Math.min(13, r * 0.6)}px "Noto Sans", system-ui, sans-serif`; ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.55)"; ctx.strokeText(t.name, X + 6, Y); ctx.fillStyle = "#f6ecd2"; ctx.fillText(t.name, X + 6, Y); }
+    }
+  }
+
+  function cities(r) {
+    const maxN = r > 12 ? 99 : r > 6 ? 36 : r > 4 ? 26 : 16;
+    const placed = [];
+    const list = D.cities.slice(0, maxN);
+    for (const c of list) {
+      const X = sx(c.x), Y = sy(c.y);
+      if (X < -120 || Y < -40 || X > W + 120 || Y > H + 40) continue;
+      const fs = Math.max(10, Math.min(15, 9 + r * 0.35)) * (c.rank < 4 ? 1.12 : 1);
+      ctx.font = `700 ${fs}px Cinzel, "Noto Serif", Georgia, serif`;
+      const name = c.name.toUpperCase();
+      const nw = ctx.measureText(name).width + fs * 0.9;
+      ctx.font = `700 ${fs * 0.82}px "Noto Sans", system-ui, sans-serif`;
+      const pw = Math.max(fs * 1.9, ctx.measureText(c.popLabel).width + fs * 0.8);
+      const bh = fs * 1.55, bw = pw + nw + (c.capital ? fs * 1.2 : 0);
+      const showEp = c.epithet && r > 7;
+      const extra = Math.min(3, c.districts.length) * fs * 1.25;
+      const gap = Math.max(4, r * 0.35);
+      // try above the city first, then below, then nudged sideways
+      const spots = [[X - bw / 2, Y - bh - gap], [X - bw / 2, Y + gap + 2], [X - bw - extra / 2 + 8, Y - bh - gap], [X - 8, Y - bh - gap],
+                     [X - bw - extra / 2 + 8, Y + gap + 2], [X - 8, Y + gap + 2]];
+      let bx = 0, by = 0, box = null;
+      for (const [px, py] of spots) {
+        const b = [px, py - (showEp ? fs : 0), px + bw + extra, py + bh];
+        if (!placed.some((o) => !(b[2] < o[0] || b[0] > o[2] || b[3] < o[1] || b[1] > o[3]))) { bx = px; by = py; box = b; break; }
+      }
+      if (!box) continue;
+      placed.push(box);
+      // city hex marker
+      ctx.beginPath(); hexPath(X, Y, Math.max(4, r * 0.62)); ctx.fillStyle = "rgba(60,48,36,0.92)"; ctx.fill(); ctx.strokeStyle = "#f3e3b5"; ctx.lineWidth = 1.4; ctx.stroke();
+      ctx.beginPath(); hexPath(X, Y, Math.max(2, r * 0.32)); ctx.fillStyle = "#e9d7a8"; ctx.fill();
+      // stem
+      const below = by > Y;
+      ctx.beginPath(); ctx.moveTo(Math.max(bx + bh / 2, Math.min(bx + bw - bh / 2, X)), below ? by : by + bh); ctx.lineTo(X, Y + (below ? 1 : -1) * Math.max(3, r * 0.4)); ctx.strokeStyle = "rgba(20,14,8,0.8)"; ctx.lineWidth = 1.5; ctx.stroke();
+      const col = stateColor[c.state] || [120, 100, 80];
+      ctx.save(); ctx.shadowColor = "rgba(0,0,0,0.55)"; ctx.shadowBlur = 6; ctx.shadowOffsetY = 2;
+      round(bx, by, bw, bh, bh / 2); ctx.fillStyle = rgb(mix(col, [24, 20, 16], 0.45)); ctx.fill(); ctx.restore();
+      round(bx, by, bw, bh, bh / 2); ctx.strokeStyle = sel === c ? "#fff" : "rgba(243,227,181,0.9)"; ctx.lineWidth = sel === c ? 2.2 : 1.2; ctx.stroke();
+      // population pill
+      round(bx + 2, by + 2, pw - 2, bh - 4, (bh - 4) / 2); ctx.fillStyle = "#e7c26b"; ctx.fill();
+      ctx.fillStyle = "#2a1c08"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.font = `800 ${fs * 0.82}px "Noto Sans", system-ui, sans-serif`; ctx.fillText(c.popLabel, bx + 1 + pw / 2, by + bh / 2 + 0.5);
+      ctx.font = `700 ${fs}px Cinzel, "Noto Serif", Georgia, serif`; ctx.fillStyle = "#fff8e6";
+      ctx.fillText(name, bx + pw + nw / 2, by + bh / 2 + 1);
+      if (c.capital) { ctx.save(); ctx.translate(bx + pw + nw + fs * 0.5, by + bh / 2); ctx.fillStyle = "#ffd45e"; ctx.beginPath(); star(5, fs * 0.5, fs * 0.22).forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); ctx.closePath(); ctx.fill(); ctx.restore(); }
+      // district badges
+      const ds = c.districts.slice(0, 3); const dr = fs * 0.58;
+      ds.forEach((d, k) => badge(bx + bw + dr + 3 + k * (dr * 2 + 3), by + bh / 2, dr, DISTRICT[d.id].c, d.id));
+      // epithet
+      if (showEp) { ctx.font = `italic ${fs * 0.78}px "Noto Serif", Georgia, serif`; ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.6)"; ctx.strokeText(c.epithet, X, by - 2); ctx.fillStyle = "#f3e3b5"; ctx.fillText(c.epithet, X, by - 2); }
+      c._box = [bx, by, bw + ds.length * (dr * 2 + 3), bh];
+    }
+  }
+  function round(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+
+  // ------------------------------------------------------------------ UI
+  function stats() {
+    const m = D.meta, s = m.stats || {}, c = m.counts;
+    const items = [];
+    if (s.population) items.push(["Citizens", fmt(s.population), `World Bank ${s.populationYear}`]);
+    if (s.gdpUSD) items.push(["GDP", "$" + fmt(s.gdpUSD), `World Bank ${s.gdpYear}`]);
+    items.push(["States", D.states.length]);
+    items.push(["Wonders", D.wonders.length, "UNESCO World Heritage"]);
+    items.push(["Universities", c.universities.toLocaleString()]);
+    items.push(["Power", Math.round(c.powerMW / 1000) + " GW", "WRI plant database"]);
+    document.getElementById("stats").innerHTML = items.map((i) => `<div title="${i[2] || ""}"><b>${i[1]}</b><span>${i[0]}</span></div>`).join("");
+  }
+
+  function legend() {
+    const L = LENSES.find((l) => l.id === lens) || LENSES[0];
+    let html = `<div class="lens">${L.name.toUpperCase()} LENS</div><div class="desc">${L.desc}</div>`;
+    if (L.key) {
+      const stops = [0, 0.25, 0.5, 0.75, 1].map((t) => rgb(R[L.id](t)) + " " + t * 100 + "%").join(",");
+      html += `<div class="ramp" style="background:linear-gradient(90deg,${stops})"></div><div class="ends"><span>${L.ends[0]}</span><span>${L.ends[1]}</span></div>`;
+    } else {
+      const sw = [3, 4, 5, 8, 6, 7].map((t) => `<span style="display:inline-flex;align-items:center;gap:4px;margin-right:9px"><i style="width:10px;height:10px;border-radius:2px;background:${rgb(TER[t])}"></i>${TER_NAME[t]}</span>`).join("");
+      html += `<div>${sw}<span style="margin-right:9px">▲ Forest</span><span style="color:#ffd76a">★ World Heritage</span></div>`;
+    }
+    html += `<div class="src">Data: Natural Earth · GeoNames · OurAirports · WRI GPPD · Mapzen/AWS Terrain Tiles · NASA POWER · Wikidata · World Bank. Yields are civmap's derived scores.</div>`;
+    document.getElementById("legend").innerHTML = html;
+  }
+
+  function lensButtons() {
+    const box = document.getElementById("lenses");
+    for (const L of LENSES) {
+      const b = document.createElement("button"); b.innerHTML = `<i style="background:${L.c}"></i>${L.name}`; b.dataset.id = L.id;
+      b.onclick = () => { lens = L.id; for (const x of box.querySelectorAll("button")) x.classList.toggle("on", x.dataset.id === lens); legend(); dirty = true; };
+      if (L.id === lens) b.classList.add("on");
+      box.appendChild(b);
+    }
+  }
+
+  function emblem() {
+    const e = document.getElementById("emblem").getContext("2d");
+    e.translate(54, 54);
+    e.beginPath(); for (let k = 0; k < 6; k++) { const a = Math.PI / 3 * k - Math.PI / 2; e.lineTo(Math.cos(a) * 50, Math.sin(a) * 50); } e.closePath();
+    const g = e.createLinearGradient(0, -50, 0, 50); g.addColorStop(0, "#f2d58a"); g.addColorStop(1, "#a97b2c"); e.fillStyle = g; e.fill();
+    e.lineWidth = 4; e.strokeStyle = "#3a2a10"; e.stroke();
+    e.beginPath(); for (let k = 0; k < 6; k++) { const a = Math.PI / 3 * k - Math.PI / 2; e.lineTo(Math.cos(a) * 38, Math.sin(a) * 38); } e.closePath(); e.fillStyle = "#1d3550"; e.fill();
+    e.fillStyle = "#f2d58a"; e.beginPath(); star(5, 24, 10).forEach((p, i) => i ? e.lineTo(p[0], p[1]) : e.moveTo(p[0], p[1])); e.closePath(); e.fill();
+  }
+
+  function hexAt(X, Y) {
+    const x = wx(X), y = wy(Y), S = D.meta.hexSize;
+    let q = (SQ3 / 3 * x - y / 3) / S, r = (2 / 3 * y) / S, s = -q - r;
+    let rq = Math.round(q), rr = Math.round(r), rs = Math.round(s);
+    const dq = Math.abs(rq - q), dr = Math.abs(rr - r), ds = Math.abs(rs - s);
+    if (dq > dr && dq > ds) rq = -rr - rs; else if (dr > ds) rr = -rq - rs;
+    const i = D._idx.get(rq * 100000 + rr); return i === undefined ? -1 : i;
+  }
+
+  function tip(i, X, Y) {
+    const t = document.getElementById("tip"); const h = D.hex;
+    if (i < 0) { t.style.display = "none"; return; }
+    const st = D.states.find((s) => s.id === h.s[i]);
+    const where = h.o[i] === 0 ? (st ? st.name : D.meta.name) : h.o[i] === 1 ? D.neighbours[h.nb[i]] : "";
+    const ter = TER_NAME[h.t[i]] + (h.h[i] ? " Hills" : "") + (h.f[i] ? " · " + FEAT_NAME[h.f[i]] : "") + (h.rv[i] ? " · River" : "");
+    let html = `<b>${ter}</b>${where ? "<br>" + where : ""}<br>${h.o[i] === 2 ? "Depth " + Math.max(0, -h.e[i]).toLocaleString() + " m" : "Elevation " + h.e[i].toLocaleString() + " m · " + h.p[i].toLocaleString() + " mm/yr · " + h.tc[i].toFixed(1) + " °C"}`;
+    if (h.o[i] === 0) html += `<br>🌾 ${h.food[i]} · ⚒ ${h.prod[i]} · 🪙 ${h.gold[i]} · 🔬 ${h.sci[i]} · 🎭 ${h.cul[i]}${h.cit[i] ? " · 👥 " + fmt(h.cit[i]) : ""}${h.mw[i] ? " · ⚡ " + h.mw[i].toLocaleString() + " MW" : ""}`;
+    t.innerHTML = html; t.style.display = "block";
+    t.style.left = Math.min(W - 290, X + 16) + "px"; t.style.top = Math.min(H - 90, Y + 14) + "px";
+  }
+
+  function showCard(c) {
+    sel = c; const el = document.getElementById("card"); el.style.display = "block";
+    const st = D.states.find((s) => s.id === c.state);
+    el.innerHTML = `<span class="x" id="cx">✕</span><h2>${c.name}${c.capital ? " ★" : ""}</h2><div class="ep">${c.epithet || ""}${st ? (c.epithet ? " · " : "") + st.name : ""}</div><div style="margin-top:6px">Population <b>${c.pop.toLocaleString()}</b> <small style="opacity:.7">(GeoNames, city proper)</small></div>` +
+      (c.districts.length ? c.districts.map((d, k) => `<div class="d"><canvas width="44" height="44" style="width:22px;height:22px" data-k="${k}"></canvas><div><b>${d.name}</b> <small style="display:inline;opacity:.6">+${d.yield}</small><small>${d.why}</small></div></div>`).join("") : `<div class="d"><small>No district stands out against the national average.</small></div>`);
+    el.querySelectorAll("canvas").forEach((cnv) => {
+      const d = c.districts[+cnv.dataset.k], x = cnv.getContext("2d"), real = ctx;
+      x.scale(2, 2); ctx = x; try { badge(11, 11, 9, DISTRICT[d.id].c, d.id); } finally { ctx = real; }
+    });
+    document.getElementById("cx").onclick = hideCard; dirty = true;
+  }
+  function hideCard() { sel = null; document.getElementById("card").style.display = "none"; dirty = true; }
+
+  // ------------------------------------------------------------------ events
+  function resize() {
+    DPR = window.devicePixelRatio || 1; W = innerWidth; H = innerHeight;
+    cv.width = W * DPR; cv.height = H * DPR; cv.style.width = W + "px"; cv.style.height = H + "px"; dirty = true;
+  }
+  let drag = null;
+  cv.addEventListener("mousedown", (e) => { drag = { x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y, moved: false }; cv.classList.add("drag"); });
+  addEventListener("mouseup", (e) => {
+    cv.classList.remove("drag");
+    if (drag && !drag.moved && D) {
+      const hit = D.cities.find((c) => c._box && e.clientX >= c._box[0] && e.clientX <= c._box[0] + c._box[2] && e.clientY >= c._box[1] && e.clientY <= c._box[1] + c._box[3]);
+      if (hit) showCard(hit); else hideCard();
+    }
+    drag = null;
+  });
+  addEventListener("mousemove", (e) => {
+    if (!D) return;
+    if (drag) { const dx = e.clientX - drag.x, dy = e.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true; cam.x = drag.cx - dx / cam.s; cam.y = drag.cy - dy / cam.s; dirty = true; tip(-1); return; }
+    if (e.target !== cv) { tip(-1); return; }
+    const i = hexAt(e.clientX, e.clientY); if (i !== hoverHex) { hoverHex = i; dirty = true; } tip(i, e.clientX, e.clientY);
+  });
+  cv.addEventListener("mouseleave", () => { hoverHex = -1; tip(-1); dirty = true; });
+  cv.addEventListener("wheel", (e) => {
+    e.preventDefault(); const f = Math.exp(-e.deltaY * 0.0015);
+    const x = wx(e.clientX), y = wy(e.clientY); cam.s = Math.max(0.05, Math.min(8, cam.s * f));
+    cam.x = x - (e.clientX - W / 2) / cam.s; cam.y = y - (e.clientY - H / 2) / cam.s; dirty = true;
+  }, { passive: false });
+  let touch = null;
+  cv.addEventListener("touchstart", (e) => { if (e.touches.length === 1) touch = { x: e.touches[0].clientX, y: e.touches[0].clientY, cx: cam.x, cy: cam.y }; else if (e.touches.length === 2) touch = { d: Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY), s: cam.s }; }, { passive: true });
+  cv.addEventListener("touchmove", (e) => { e.preventDefault(); if (!touch) return; if (e.touches.length === 1 && touch.cx !== undefined) { cam.x = touch.cx - (e.touches[0].clientX - touch.x) / cam.s; cam.y = touch.cy - (e.touches[0].clientY - touch.y) / cam.s; } else if (e.touches.length === 2 && touch.d) { cam.s = Math.max(0.05, Math.min(8, touch.s * Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY) / touch.d)); } dirty = true; }, { passive: false });
+  addEventListener("keydown", (e) => { if (e.key === "f") { fit(); dirty = true; } if (e.key === "Escape") hideCard(); });
+  addEventListener("resize", () => { resize(); if (D) fit(); });
+
+  function loop() { if (dirty) draw(); requestAnimationFrame(loop); }
+
+  // ------------------------------------------------------------------ boot
+  resize(); emblem(); lensButtons();
+  const fontsReady = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
+  function start(data) { fontsReady.then(() => { load(data); if (params.has("zoom")) { cam.s *= +params.get("zoom"); } if (params.has("at")) { const [a, b] = params.get("at").split(",").map(Number); cam.x = a; cam.y = b; } dirty = true; loop(); }); }
+  if (window.CIVMAP_DATA) start(window.CIVMAP_DATA);
+  else if (window.CIVMAP_INDEX) {
+    const idx = window.CIVMAP_INDEX; const want = (params.get("country") || location.hash.slice(1) || idx[0].iso2).toUpperCase();
+    const pick = document.getElementById("picker");
+    pick.innerHTML = `<select id="sel">${idx.map((c) => `<option value="${c.iso2}"${c.iso2 === want ? " selected" : ""}>${c.name}</option>`).join("")}</select>`;
+    const go = (iso) => fetch(`data/${iso}.json`).then((r) => r.json()).then((d) => { if (D) { load(d); } else start(d); history.replaceState(null, "", "#" + iso); });
+    document.getElementById("sel").onchange = (e) => go(e.target.value);
+    go(idx.some((c) => c.iso2 === want) ? want : idx[0].iso2);
+  }
+})();
+</script>
+</body>
+</html>
